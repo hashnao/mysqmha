@@ -1,0 +1,103 @@
+#!/bin/bash
+#
+# chkconfig: - 58 74
+# description: masterha_manager is master monitoring and running failover automatically in case of master down
+# processname: masterha_manager
+# pidfile: /var/lib/mysql/master1.pid
+# config: /etc/masterha_default.cnf
+
+# source profile
+. /etc/profile
+PATH=$PATH:/usr/local/bin
+export PATH
+
+# variables
+retval=0
+prog="$0"
+default_conf=/etc/masterha_default.cnf
+app_conf=/etc/app1.cnf
+lockdir=/var/lock/subsys
+lockfile=$lockdir/$prog
+
+# if neccessary options are set
+[ -f "$default_conf" ] || echo "Global Configuraion file, $default_conf is not found"
+
+# Functions
+confstatus() {
+  if [ -f "$app_conf" ]; then
+    true
+  else
+    echo "Application Configuraion file, $app_conf is not found"
+    exit 2
+  fi
+}
+start() {
+  confstatus
+  echo -n $"Starting $prog: "
+#  nohup masterha_manager --conf=$app_conf < /dev/null > $LOGFILE 2>&1 &
+  nohup masterha_manager --conf=$app_conf &
+  retval=$?
+  [ "$retval" -eq 0 ] && touch $lockfile
+  return $retval
+}
+stop() {
+  echo -n $"Shutting down $prog: "
+#  PROC=$(pgrep -fl masterha_manager | awk '{print $1}')
+#  kill $PROC
+  masterha_stop --conf=$app_conf
+  retval=$?
+  [ "$retval" -eq 0 ] && rm -f $lockfile
+  return $retval
+  [ -f "$lockfile" ] && rm -f $lockfile
+}
+status() {
+  confstatus
+  masterha_check_status --conf=$app_conf
+  retval=$?
+}
+checkrepl() {
+  confstatus
+  masterha_check_repl --conf=$app_conf
+  retval=$?
+}
+
+# See how we were called.
+case "$1" in
+  start)
+    start
+    ;;
+
+  stop)
+    stop
+    ;;
+
+  status)
+    status
+    retval=$?
+    ;;
+
+  checkrepl)
+    checkrepl
+    retval=$?
+    ;;
+
+    restart|reload)
+    stop
+    start
+    retval=$?
+    ;;
+
+  condrestart)
+    if [ -f "$lockfile" ]; then
+      stop
+      start
+      retval=$?
+    fi
+    ;;
+
+  *)
+    echo $"Usage: $0 {start|stop|restart|condrestart|status|checkrepl}"
+    retval=3
+esac
+exit $retval
+
